@@ -11,13 +11,25 @@ The code is largely based on NeRF implementation (see master or dev branch), the
 * OS: Ubuntu 18.04
 * NVIDIA GPU with **CUDA>=10.2** (tested with 1 RTX2080Ti)
 
+remote server
+```
+ssh -p 22 yeliu@cpu001.corp.deepmirror.com
+cd /mnt/nas/share-map/experiment/liuye/dev/nerf_pl
+```
+
 ## Software
 
-* Clone this repo by `git clone https://github.com/kwea123/nerf_pl`
-* Python>=3.6 (installation via [anaconda](https://www.anaconda.com/distribution/) is recommended, use `conda create -n nerf_pl python=3.6` to create a conda environment and activate it by `conda activate nerf_pl`)
+* Python>=3.6 (installation via [anaconda](https://www.anaconda.com/distribution/) is recommended.
+```
+conda create -n nerf_pl python=3.6
+conda activate nerf_pl
+```
+
 * Python libraries
-    * Install core requirements by `pip install -r requirements.txt`
-    
+```
+pip install -r artifacts/requirements.txt
+```
+
 # :key: Training
 
 #### Update: There is a [difference](https://github.com/kwea123/nerf_pl/issues/130) between the paper: I didn't add the appearance embedding in the coarse model while it should. Please change [this line](https://github.com/kwea123/nerf_pl/blob/nerfw/models/nerf.py#L65) to `self.encode_appearance = encode_appearance` to align with the paper.
@@ -26,27 +38,10 @@ The code is largely based on NeRF implementation (see master or dev branch), the
 
 <details>
   <summary>Steps</summary>
-   
+
 ### Data download
 
 Download `nerf_synthetic.zip` from [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1)
-
-### Data perturbations
-
-All random seeds are fixed to reproduce the same perturbations every time.
-For detailed implementation, see [blender.py](datasets/blender.py).
-
-*  Color perturbations: Uses the same parameters in the paper.
-
-![color](https://user-images.githubusercontent.com/11364490/105580035-4ad3b780-5dcd-11eb-97cc-4cea3c9743ac.gif)
-
-*  Occlusions: The square has size 200x200 (should be the same as the paper), the position is randomly sampled inside the central 400x400 area; the 10 colors are random.
-
-![occ](https://user-images.githubusercontent.com/11364490/105578658-283da080-5dc5-11eb-9438-9368ee241cde.gif)
-
-*  Combined: First perturb the color then add square.
-
-![combined](https://user-images.githubusercontent.com/11364490/105580018-31cb0680-5dcd-11eb-82bf-eca3133f2586.gif)
 
 ### Training model
 
@@ -54,7 +49,7 @@ Base:
 ```
 python train.py \
    --dataset_name blender \
-   --root_dir $BLENDER_DIR \
+   --root_dir ./data/nerf_synthetic/lego \
    --N_importance 64 --img_wh 400 400 --noise_std 0 \
    --num_epochs 20 --batch_size 1024 \
    --optimizer adam --lr 5e-4 --lr_scheduler cosine \
@@ -62,31 +57,9 @@ python train.py \
 ```
 
 Add `--encode_a` for appearance embedding, `--encode_t` for transient embedding.
-
 Add `--data_perturb color occ` to perturb the dataset.
 
-Example:
-```
-python train.py \
-   --dataset_name blender \
-   --root_dir $BLENDER_DIR \
-   --N_importance 64 --img_wh 400 400 --noise_std 0 \
-   --num_epochs 20 --batch_size 1024 \
-   --optimizer adam --lr 5e-4 --lr_scheduler cosine \
-   --exp_name exp \
-   --data_perturb occ \
-   --encode_t --beta_min 0.1
-```
-
-To train NeRF-U on occluders (Table 3 bottom left).
-
 See [opt.py](opt.py) for all configurations.
-
-You can monitor the training process by `tensorboard --logdir logs/` and go to `localhost:6006` in your browser.
-
-Example training loss evolution (NeRF-U on occluders):
-
-![log](https://user-images.githubusercontent.com/11364490/105621776-a72aeb80-5e4e-11eb-9d12-c8b6f2336d25.png)
 
 </details>
 
@@ -135,52 +108,7 @@ Download the pretrained models and training logs in [release](https://github.com
 Use [eval.py](eval.py) to create the whole sequence of moving views.
 It will create folder `results/{dataset_name}/{scene_name}` and run inference on all test data, finally create a gif out of them.
 
-## Lego from Blender
-
-All my experiments are done with image size 200x200, so theoretically PSNR is expected to be lower.
-
-1.  [test_nerfa_color](test_nerfa_color.ipynb) shows that NeRF-A is able to capture image-dependent color variations.
-
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/11364490/105712423-1db60f00-5f5d-11eb-9135-d9df602fa249.gif">
-  <img src="https://user-images.githubusercontent.com/11364490/105626088-0a2d7a00-5e71-11eb-926d-2f7d18816462.gif">
-  <br>
-  Left: NeRF, PSNR=23.17 (paper=23.38). Right: <a href=https://github.com/kwea123/nerf_pl/releases/tag/nerfa_color>pretrained</a> <b>NeRF-A</b>, PSNR=<b>28.20</b> (paper=30.66).
-</p>
-
-2.  [test_nerfu_occ](test_nerfu_occ.ipynb) shows that NeRF-U is able to decompose the scene into static and transient components when the scene has random occluders.
-
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/11364490/105696553-d4f35b80-5f46-11eb-84f6-2ab0c4f73501.gif">
-  <img src="https://user-images.githubusercontent.com/11364490/105578186-a9933400-5dc1-11eb-8865-e276b581d8fd.gif">
-  <br>
-  Left: NeRF, PSNR=21.94 (paper=19.35). Right: <a href=https://github.com/kwea123/nerf_pl/releases/tag/nerfu_occ>pretrained</a> <b>NeRF-U</b>, PSNR=<b>28.60</b> (paper=23.47).
-</p>
-
-3.  [test_nerfw_all](test_nerfw_all.ipynb) shows that NeRF-W is able to both handle color variation and decompose the scene into static and transient components (color variation is not that well learnt though, maybe adding more layers in the static rgb head will help).
-
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/11364490/105775080-8d51eb80-5fa9-11eb-9e89-7147c6377453.gif">
-  <img src="https://user-images.githubusercontent.com/11364490/105630746-43c0ae00-5e8e-11eb-856a-e6ce7ac8c16f.gif">
-  <br>
-  Left: NeRF, PSNR=18.83 (paper=15.73). Right: <a href=https://github.com/kwea123/nerf_pl/releases/tag/nerfw_all>pretrained</a> <b>NeRF-W</b>, PSNR=<b>24.86</b> (paper=22.19).
-</p>
-
-4. Reference: Original NeRF (without `--encode_a` and `--encode_t`) trained on unperturbed data.
-
-<p align="center">
-   <img src="https://user-images.githubusercontent.com/11364490/105649082-0e4dac00-5ef2-11eb-9d56-946e2ac068c4.gif">
-   <br>
-   PSNR=30.93 (paper=32.89)
-</p>
-
-## Brandenburg Gate from Phototourism dataset
-
-See [test_phototourism.ipynb](https://nbviewer.jupyter.org/github/kwea123/nerf_pl/blob/nerfw/test_phototourism.ipynb) for some paper results' reproduction.
-
-Use [eval.py](eval.py) ([example](https://github.com/kwea123/nerf_pl/releases/tag/nerfw_branden)) to create a flythrough video. You might need to design a camera path to make it look more cool!
-
-![brandenburg_test](https://user-images.githubusercontent.com/11364490/107109627-54f1bd80-6885-11eb-9ab1-74a9d66d8942.gif)
+[See original repo](https://github.com/kwea123/nerf_pl/tree/nerfw)
 
 # :warning: Notes on differences with the paper
 
