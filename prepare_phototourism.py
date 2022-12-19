@@ -1,6 +1,7 @@
 import argparse
 from datasets import PhototourismDataset
 import numpy as np
+import pandas as pd
 import os
 import pickle
 
@@ -15,8 +16,26 @@ def get_opts():
     return parser.parse_args()
 
 
+def further_downsample_images(args, step_size=1):
+    tsv_file = os.path.join(args.root_dir, 'dense/split.tsv')
+
+    if not os.path.exists(tsv_file):
+        return
+
+    # downsample images
+    pd_files = pd.read_csv(tsv_file, sep='\t')
+    downsampled_df = pd_files.iloc[::step_size, :]
+    downsampled_df.reset_index(inplace=True, drop=True)
+
+    # save the new tsv
+    tsv_file_out = os.path.join(args.root_dir, 'split.tsv')
+    downsampled_df.to_csv(tsv_file_out, sep="\t")
+
+
 if __name__ == '__main__':
     args = get_opts()
+    further_downsample_images(args)
+
     os.makedirs(os.path.join(args.root_dir, 'cache'), exist_ok=True)
     print(f'Preparing cache for scale {args.img_downscale}...')
     dataset = PhototourismDataset(args.root_dir, 'train', args.img_downscale)
@@ -45,4 +64,8 @@ if __name__ == '__main__':
             dataset.all_rays.numpy())
     np.save(os.path.join(args.root_dir, f'cache/rgbs{args.img_downscale}.npy'),
             dataset.all_rgbs.numpy())
+    # save scale factor
+    f_s = open(os.path.join(args.root_dir, f'cache/scale_factor.txt'), "w")
+    f_s.write(str(dataset.scale_factor))
+    f_s.close()
     print(f"Data cache saved to {os.path.join(args.root_dir, 'cache')} !")

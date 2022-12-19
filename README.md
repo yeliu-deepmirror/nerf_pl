@@ -76,22 +76,21 @@ Download the train/test split from the "Additional links" [here](https://nerf-w.
 
 (Optional but **highly** recommended) Run `python prepare_phototourism.py --root_dir $ROOT_DIR --img_downscale {an integer, e.g. 2 means half the image sizes}` to prepare the training data and save to disk first, if you want to run multiple experiments or run on multiple gpus. This will **largely** reduce the data preparation step before training.
 
-### Data visualization (Optional)
-
-Take a look at [phototourism_visualization.ipynb](https://nbviewer.jupyter.org/github/kwea123/nerf_pl/blob/nerfw/phototourism_visualization.ipynb), a quick visualization of the data: scene geometry, camera poses, rays and bounds, to assure you that my data convertion works correctly.
-
 ### Training model
 
 Run (example)
 
 ```
+SESSION_NAME=20220823T175708+0800_xvnxa_xvnxa004_jmwdemo2
+python prepare_phototourism.py --root_dir ./data/${SESSION_NAME} --img_downscale 8
+
 python train.py \
-  --root_dir /home/ubuntu/data/IMC-PT/brandenburg_gate/ --dataset_name phototourism \
+  --root_dir ./data/${SESSION_NAME} --dataset_name phototourism \
   --img_downscale 8 --use_cache --N_importance 64 --N_samples 64 \
   --encode_a --encode_t --beta_min 0.03 --N_vocab 1500 \
   --num_epochs 20 --batch_size 1024 \
   --optimizer adam --lr 5e-4 --lr_scheduler cosine \
-  --exp_name brandenburg_scale8_nerfw
+  --exp_name ${SESSION_NAME}
 ```
 
 `--encode_a` and `--encode_t` options are both required to maximize NeRF-W performance.

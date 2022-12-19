@@ -10,7 +10,7 @@ from torchvision import transforms as T
 
 from .ray_utils import *
 from .colmap_utils import \
-    read_cameras_binary, read_images_binary, read_points3d_binary
+    read_cameras_binary, read_images_binary, read_points3d_binary, read_cameras_text, read_images_text, read_points3D_text
 
 
 class PhototourismDataset(Dataset):
@@ -41,7 +41,6 @@ class PhototourismDataset(Dataset):
     def read_meta(self):
         # read all files in the tsv first (split to train and test later)
         tsv = glob.glob(os.path.join(self.root_dir, '*.tsv'))[0]
-        self.scene_name = os.path.basename(tsv)[:-4]
         self.files = pd.read_csv(tsv, sep='\t')
         self.files = self.files[~self.files['id'].isnull()] # remove data without id
         self.files.reset_index(inplace=True, drop=True)
@@ -55,16 +54,28 @@ class PhototourismDataset(Dataset):
             with open(os.path.join(self.root_dir, f'cache/image_paths.pkl'), 'rb') as f:
                 self.image_paths = pickle.load(f)
         else:
-            imdata = read_images_binary(os.path.join(self.root_dir, 'dense/sparse/images.bin'))
+            images_path_bin = os.path.join(self.root_dir, 'dense/sparse/images.bin')
+            images_path_txt = os.path.join(self.root_dir, 'dense/model/images.txt')
+            if os.path.exists(images_path_bin):
+                imdata = read_images_binary(images_path_bin)
+            elif os.path.exists(images_path_txt):
+                imdata = read_images_text(images_path_txt)
+            else:
+                assert False, 'images file does not exist!'
             img_path_to_id = {}
+            id_to_cam_id = {}
             for v in imdata.values():
                 img_path_to_id[v.name] = v.id
+                id_to_cam_id[v.id] = v.camera_id
             self.img_ids = []
+            self.camera_ids = []
             self.image_paths = {} # {id: filename}
             for filename in list(self.files['filename']):
                 id_ = img_path_to_id[filename]
                 self.image_paths[id_] = filename
                 self.img_ids += [id_]
+                cam_id_ = id_to_cam_id[id_]
+                self.camera_ids += [cam_id_]
 
         # Step 2: read and rescale camera intrinsics
         if self.use_cache:
@@ -72,10 +83,21 @@ class PhototourismDataset(Dataset):
                 self.Ks = pickle.load(f)
         else:
             self.Ks = {} # {id: K}
-            camdata = read_cameras_binary(os.path.join(self.root_dir, 'dense/sparse/cameras.bin'))
-            for id_ in self.img_ids:
+            cams_path_bin = os.path.join(self.root_dir, 'dense/sparse/cameras.bin')
+            cams_path_txt = os.path.join(self.root_dir, 'dense/model/cameras.txt')
+            if os.path.exists(cams_path_bin):
+                camdata = read_cameras_binary(cams_path_bin)
+            elif os.path.exists(cams_path_txt):
+                camdata = read_cameras_text(cams_path_txt)
+            else:
+                assert False, 'cameras file does not exist!'
+
+            for i in range(len(self.img_ids)):
+                id_ = self.img_ids[i]
+                cam_id_ = self.camera_ids[i]
+
                 K = np.zeros((3, 3), dtype=np.float32)
-                cam = camdata[id_]
+                cam = camdata[cam_id_]
                 img_w, img_h = int(cam.params[2]*2), int(cam.params[3]*2)
                 img_w_, img_h_ = img_w//self.img_downscale, img_h//self.img_downscale
                 K[0, 0] = cam.params[0]*img_w_/img_w # fx
@@ -109,7 +131,15 @@ class PhototourismDataset(Dataset):
             with open(os.path.join(self.root_dir, f'cache/fars.pkl'), 'rb') as f:
                 self.fars = pickle.load(f)
         else:
-            pts3d = read_points3d_binary(os.path.join(self.root_dir, 'dense/sparse/points3D.bin'))
+            pts_path_bin = os.path.join(self.root_dir, 'dense/sparse/points3D.bin')
+            pts_path_txt = os.path.join(self.root_dir, 'dense/model/points3D.txt')
+            if os.path.exists(pts_path_bin):
+                pts3d = read_points3d_binary(pts_path_bin)
+            elif os.path.exists(pts_path_txt):
+                pts3d = read_points3D_text(pts_path_txt)
+            else:
+                assert False, 'cameras file does not exist!'
+            # pts3d = read_points3d_binary(os.path.join(self.root_dir, 'dense/sparse/points3D.bin'))
             self.xyz_world = np.array([pts3d[p_id].xyz for p_id in pts3d])
             xyz_world_h = np.concatenate([self.xyz_world, np.ones((len(self.xyz_world), 1))], -1)
             # Compute near and far bounds for each image individually
@@ -117,21 +147,23 @@ class PhototourismDataset(Dataset):
             for i, id_ in enumerate(self.img_ids):
                 xyz_cam_i = (xyz_world_h @ w2c_mats[i].T)[:, :3] # xyz in the ith cam coordinate
                 xyz_cam_i = xyz_cam_i[xyz_cam_i[:, 2]>0] # filter out points that lie behind the cam
-                self.nears[id_] = np.percentile(xyz_cam_i[:, 2], 0.1)
-                self.fars[id_] = np.percentile(xyz_cam_i[:, 2], 99.9)
+                self.nears[id_] = np.percentile(xyz_cam_i[:, 2], 5)
+                self.fars[id_] = np.percentile(xyz_cam_i[:, 2], 95)
 
+            # Create a new 1-dimensional array from an iterable object.
             max_far = np.fromiter(self.fars.values(), np.float32).max()
-            scale_factor = max_far/5 # so that the max far is scaled to 5
-            self.poses[..., 3] /= scale_factor
+            self.scale_factor = max_far/5 # so that the max far is scaled to 5
+            print("scale_factor :", self.scale_factor)
+            self.poses[..., 3] /= self.scale_factor
             for k in self.nears:
-                self.nears[k] /= scale_factor
+                self.nears[k] /= self.scale_factor
             for k in self.fars:
-                self.fars[k] /= scale_factor
-            self.xyz_world /= scale_factor
+                self.fars[k] /= self.scale_factor
+            self.xyz_world /= self.scale_factor
         self.poses_dict = {id_: self.poses[i] for i, id_ in enumerate(self.img_ids)}
-            
+
         # Step 5. split the img_ids (the number of images is verfied to match that in the paper)
-        self.img_ids_train = [id_ for i, id_ in enumerate(self.img_ids) 
+        self.img_ids_train = [id_ for i, id_ in enumerate(self.img_ids)
                                     if self.files.loc[i, 'split']=='train']
         self.img_ids_test = [id_ for i, id_ in enumerate(self.img_ids)
                                     if self.files.loc[i, 'split']=='test']
@@ -162,7 +194,7 @@ class PhototourismDataset(Dataset):
                     img = self.transform(img) # (3, h, w)
                     img = img.view(3, -1).permute(1, 0) # (h*w, 3) RGB
                     self.all_rgbs += [img]
-                    
+
                     directions = get_ray_directions(img_h, img_w, self.Ks[id_])
                     rays_o, rays_d = get_rays(directions, c2w)
                     rays_t = id_ * torch.ones(len(rays_o), 1)
@@ -172,10 +204,10 @@ class PhototourismDataset(Dataset):
                                                 self.fars[id_]*torch.ones_like(rays_o[:, :1]),
                                                 rays_t],
                                                 1)] # (h*w, 8)
-                                    
+
                 self.all_rays = torch.cat(self.all_rays, 0) # ((N_images-1)*h*w, 8)
                 self.all_rgbs = torch.cat(self.all_rgbs, 0) # ((N_images-1)*h*w, 3)
-        
+
         elif self.split in ['val', 'test_train']: # use the first image as val image (also in train)
             self.val_id = self.img_ids_train[0]
 
