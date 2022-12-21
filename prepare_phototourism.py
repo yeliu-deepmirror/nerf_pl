@@ -34,7 +34,6 @@ def further_downsample_images(args, step_size=1):
 
 if __name__ == '__main__':
     args = get_opts()
-    further_downsample_images(args)
 
     os.makedirs(os.path.join(args.root_dir, 'cache'), exist_ok=True)
     print(f'Preparing cache for scale {args.img_downscale}...')
@@ -65,7 +64,8 @@ if __name__ == '__main__':
     np.save(os.path.join(args.root_dir, f'cache/rgbs{args.img_downscale}.npy'),
             dataset.all_rgbs.numpy())
     # save scale factor
-    f_s = open(os.path.join(args.root_dir, f'cache/scale_factor.txt'), "w")
-    f_s.write(str(dataset.scale_factor))
+    f_s = open(os.path.join(args.root_dir, f'cache/coordinate.txt'), "w")
+    f_s.write("scale_factor : " + str(dataset.scale_factor) + "\n")
+    f_s.write("center : " + str(dataset.center) + "\n")
     f_s.close()
     print(f"Data cache saved to {os.path.join(args.root_dir, 'cache')} !")

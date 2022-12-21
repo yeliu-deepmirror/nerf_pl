@@ -65,16 +65,9 @@ See [opt.py](opt.py) for all configurations.
 
 ## Phototourism dataset
 
-<details>
-  <summary>Steps</summary>
+### Data prepare
 
-### Data download
-
-Download the scenes you want from [here](https://www.cs.ubc.ca/~kmyi/imw2020/data.html) (train/test splits are only provided for "Brandenburg Gate", "Sacre Coeur" and "Trevi Fountain", if you want to train on other scenes, you need to clean the data (Section C) and split the data by yourself)
-
-Download the train/test split from the "Additional links" [here](https://nerf-w.github.io/) and put under each scene's folder (the **same level** as the "dense" folder)
-
-(Optional but **highly** recommended) Run `python prepare_phototourism.py --root_dir $ROOT_DIR --img_downscale {an integer, e.g. 2 means half the image sizes}` to prepare the training data and save to disk first, if you want to run multiple experiments or run on multiple gpus. This will **largely** reduce the data preparation step before training.
+run colmap
 
 ### Training model
 
@@ -99,7 +92,7 @@ python train.py \
 
 ![image](docs/demo.gif)
 
-</details>
+![mesh](docs/mesh.png)
 
 ## Pretrained models and logs
 Download the pretrained models and training logs in [release](https://github.com/kwea123/nerf_pl/releases).
