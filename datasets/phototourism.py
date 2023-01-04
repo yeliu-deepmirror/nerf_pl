@@ -177,7 +177,9 @@ class PhototourismDataset(Dataset):
         # Step 3: read c2w poses (of the images in tsv file only) and correct the order
         if self.use_cache:
             self.poses = np.load(os.path.join(self.root_dir, 'cache/poses.npy'))
-            self.center = np.load(os.path.join(self.root_dir, 'cache/center.npy'))
+            center_path = os.path.join(self.root_dir, 'cache/center.npy')
+            if os.path.exists(center_path):
+                self.center = np.load(center_path)
         else:
             w2c_mats = []
             for id_ in self.img_ids:
@@ -334,6 +336,8 @@ class PhototourismDataset(Dataset):
             return self.N_images_train
         if self.split == 'val':
             return self.val_num
+        if self.split == 'test_all':
+            return len(self.poses_dict)
         return len(self.poses_test)
 
     def __getitem__(self, idx):
@@ -343,13 +347,16 @@ class PhototourismDataset(Dataset):
                       'rgbs': self.all_rgbs[idx],
                       'depths': self.all_depths[idx]}
 
-        elif self.split in ['val', 'test_train']:
+        elif self.split in ['val', 'test_train', 'test_all']:
             sample = {}
             if self.split == 'val':
                 id_ = self.val_id
+            elif self.split == 'test_all':
+                id_ = self.img_ids[idx]
             else:
                 id_ = self.img_ids_train[idx]
             sample['c2w'] = c2w = torch.FloatTensor(self.poses_dict[id_])
+            sample['image_path'] = self.image_paths[id_]
 
             img = Image.open(os.path.join(self.root_dir, 'colmap/images',
                                           self.image_paths[id_])).convert('RGB')
