@@ -115,6 +115,7 @@ class PhototourismDataset(Dataset):
         new_w = depth_data.shape[1]//self.img_downscale
 
         depth_resized = cv2.resize(depth_data, dsize=(new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        depth_resized = depth_resized / self.scale_factor
         return True, depth_resized
 
 
@@ -176,6 +177,7 @@ class PhototourismDataset(Dataset):
         # Step 3: read c2w poses (of the images in tsv file only) and correct the order
         if self.use_cache:
             self.poses = np.load(os.path.join(self.root_dir, 'cache/poses.npy'))
+            self.center = np.load(os.path.join(self.root_dir, 'cache/center.npy'))
         else:
             w2c_mats = []
             for id_ in self.img_ids:
@@ -197,6 +199,9 @@ class PhototourismDataset(Dataset):
                 self.nears = pickle.load(f)
             with open(os.path.join(self.root_dir, f'cache/fars.pkl'), 'rb') as f:
                 self.fars = pickle.load(f)
+            # read scale factor
+            self.scale_factor = np.load(os.path.join(self.root_dir, 'cache/scale_factor.npy'))
+            print("scale_factor :", self.scale_factor)
         else:
             pts3d = self.read_points()
             self.xyz_world = np.array([pts3d[p_id].xyz for p_id in pts3d])
