@@ -74,7 +74,7 @@ run colmap
 Run (example)
 
 ```
-SESSION_NAME=20220823T175708+0800_xvnxa_xvnxa004_jmwdemo2
+SESSION_NAME=20220726T162250+0800_xvnxa_xvnxa001_gzns_2jmw2
 python prepare_phototourism.py --root_dir ./data/${SESSION_NAME} --img_downscale 8
 
 python train.py \

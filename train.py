@@ -124,11 +124,14 @@ class NeRFSystem(LightningModule):
                           num_workers=4,
                           batch_size=1, # validate one image (H*W rays) at a time
                           pin_memory=True)
-    
+
     def training_step(self, batch, batch_nb):
         rays, rgbs, ts = batch['rays'], batch['rgbs'], batch['ts']
         results = self(rays, ts)
-        loss_d = self.loss(results, rgbs)
+        targets = {'rgbs': rgbs}
+        if 'depths' in batch:
+            targets['depths'] = batch['depths']
+        loss_d = self.loss(results, targets)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -149,11 +152,13 @@ class NeRFSystem(LightningModule):
         rgbs = rgbs.squeeze() # (H*W, 3)
         ts = ts.squeeze() # (H*W)
         results = self(rays, ts)
-        loss_d = self.loss(results, rgbs)
+
+        targets = {'rgbs': rgbs}
+        loss_d = self.loss(results, targets)
         loss = sum(l for l in loss_d.values())
         log = {'val_loss': loss}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
-    
+
         if batch_nb == 0:
             if self.hparams.dataset_name == 'phototourism':
                 WH = batch['img_wh']

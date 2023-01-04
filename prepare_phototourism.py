@@ -63,6 +63,8 @@ if __name__ == '__main__':
             dataset.all_rays.numpy())
     np.save(os.path.join(args.root_dir, f'cache/rgbs{args.img_downscale}.npy'),
             dataset.all_rgbs.numpy())
+    np.save(os.path.join(args.root_dir, f'cache/depths{args.img_downscale}.npy'),
+            dataset.all_depths.numpy())
     # save scale factor
     f_s = open(os.path.join(args.root_dir, f'cache/coordinate.txt'), "w")
     f_s.write("scale_factor : " + str(dataset.scale_factor) + "\n")
