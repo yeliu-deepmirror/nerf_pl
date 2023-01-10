@@ -30,7 +30,7 @@ class NeRFSystem(LightningModule):
         super().__init__()
         self.hparams = hparams
 
-        self.loss = loss_dict['nerfw'](coef=1)
+        self.loss = loss_dict['nerfw'](coef=1, use_depth=hparams.depth_loss)
 
         self.models_to_train = []
         self.embedding_xyz = PosEmbedding(hparams.N_emb_xyz-1, hparams.N_emb_xyz)
@@ -144,6 +144,9 @@ class NeRFSystem(LightningModule):
             self.log(f'train/{k}', v, prog_bar=True)
         self.log('train/psnr', psnr_, prog_bar=True)
 
+        # clean cache
+        del results
+        torch.cuda.empty_cache()
         return loss
 
     def validation_step(self, batch, batch_nb):
@@ -175,6 +178,9 @@ class NeRFSystem(LightningModule):
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
 
+        # clean cache
+        del results
+        torch.cuda.empty_cache()
         return log
 
     def validation_epoch_end(self, outputs):

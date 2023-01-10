@@ -108,6 +108,7 @@ class PhototourismDataset(Dataset):
         npz_name = os.path.join("depth_data", image_file_name[:-4] + ".npz")
         npz_path = os.path.join(self.root_dir, npz_name)
         if not os.path.exists(npz_path):
+            print("[WARNING] depth not found", npz_path)
             return False, None
         depth_data = np.load(npz_path)["depth"]
         # resize depth by self.img_downscale

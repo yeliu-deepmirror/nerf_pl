@@ -39,7 +39,7 @@ def get_opts():
 
     # NeRF-W parameters
     parser.add_argument('--N_vocab', type=int, default=100,
-                        help='''number of vocabulary (number of images) 
+                        help='''number of vocabulary (number of images)
                                 in the dataset for nn.Embedding''')
     parser.add_argument('--encode_a', default=False, action="store_true",
                         help='whether to encode appearance (NeRF-A)')
@@ -51,6 +51,10 @@ def get_opts():
                         help='number of embeddings for transient objects')
     parser.add_argument('--beta_min', type=float, default=0.1,
                         help='minimum color variance for each ray')
+
+    # depth loss
+    parser.add_argument('--depth_loss', type=bool, default=False,
+                        help='use depth as loss')
 
     parser.add_argument('--batch_size', type=int, default=1024,
                         help='batch size')
