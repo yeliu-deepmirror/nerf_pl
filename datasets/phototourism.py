@@ -5,6 +5,7 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+import cv2
 from PIL import Image
 from torchvision import transforms as T
 
@@ -103,6 +104,22 @@ class PhototourismDataset(Dataset):
         return pts3d
 
 
+    def read_depth(self, image_file_name):
+        npz_name = os.path.join("depth_data", image_file_name[:-4] + ".npz")
+        npz_path = os.path.join(self.root_dir, npz_name)
+        if not os.path.exists(npz_path):
+            print("[WARNING] depth not found", npz_path)
+            return False, None
+        depth_data = np.load(npz_path)["depth"]
+        # resize depth by self.img_downscale
+        new_h = depth_data.shape[0]//self.img_downscale
+        new_w = depth_data.shape[1]//self.img_downscale
+
+        depth_resized = cv2.resize(depth_data, dsize=(new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        depth_resized = depth_resized / self.scale_factor
+        return True, depth_resized
+
+
     def read_meta(self):
         # read all files in the tsv first (split to train and test later)
         tsv = os.path.join(self.root_dir, self.split_file_name)
@@ -141,14 +158,14 @@ class PhototourismDataset(Dataset):
                 self.Ks = pickle.load(f)
         else:
             self.Ks = {} # {id: K}
-            camdata = self.read_cameras()
+            self.camdata = self.read_cameras()
 
             for i in range(len(self.img_ids)):
                 id_ = self.img_ids[i]
                 cam_id_ = self.camera_ids[i]
 
                 K = np.zeros((3, 3), dtype=np.float32)
-                cam = camdata[cam_id_]
+                cam = self.camdata[cam_id_]
                 img_w, img_h = int(cam.params[2]*2), int(cam.params[3]*2)
                 img_w_, img_h_ = img_w//self.img_downscale, img_h//self.img_downscale
                 K[0, 0] = cam.params[0]*img_w_/img_w # fx
@@ -161,14 +178,14 @@ class PhototourismDataset(Dataset):
         # Step 3: read c2w poses (of the images in tsv file only) and correct the order
         if self.use_cache:
             self.poses = np.load(os.path.join(self.root_dir, 'cache/poses.npy'))
+            center_path = os.path.join(self.root_dir, 'cache/center.npy')
+            if os.path.exists(center_path):
+                self.center = np.load(center_path)
         else:
             w2c_mats = []
-            bottom = np.array([0, 0, 0, 1.]).reshape(1, 4)
             for id_ in self.img_ids:
                 im = imdata[id_]
-                R = im.qvec2rotmat()
-                t = im.tvec.reshape(3, 1)
-                w2c_mats += [np.concatenate([np.concatenate([R, t], 1), bottom], 0)]
+                w2c_mats += [im.w2c_mat()]
             w2c_mats = np.stack(w2c_mats, 0) # (N_images, 4, 4)
             self.poses = np.linalg.inv(w2c_mats)[:, :3] # (N_images, 3, 4)
             # Original poses has rotation in form "right down front", change to "right up back"
@@ -185,6 +202,9 @@ class PhototourismDataset(Dataset):
                 self.nears = pickle.load(f)
             with open(os.path.join(self.root_dir, f'cache/fars.pkl'), 'rb') as f:
                 self.fars = pickle.load(f)
+            # read scale factor
+            self.scale_factor = np.load(os.path.join(self.root_dir, 'cache/scale_factor.npy'))
+            print("scale_factor :", self.scale_factor)
         else:
             pts3d = self.read_points()
             self.xyz_world = np.array([pts3d[p_id].xyz for p_id in pts3d])
@@ -209,6 +229,50 @@ class PhototourismDataset(Dataset):
             self.xyz_world /= self.scale_factor
         self.poses_dict = {id_: self.poses[i] for i, id_ in enumerate(self.img_ids)}
 
+        # Step Additional. get sparse image depth
+        if self.use_cache:
+            # todo
+            all_depths = np.load(os.path.join(self.root_dir,
+                                              f'cache/depths{self.img_downscale}.npy'))
+            self.all_depths = torch.from_numpy(all_depths)
+        else:
+            self.all_depths = []
+            for id in self.poses_dict.keys():
+                image = imdata[id]
+                assert self.image_paths[id] == image.name
+
+                # try read depth from npz
+                depth_ret, depth = self.read_depth(self.image_paths[id])
+                if not depth_ret:
+                    # create depth
+
+                    # get image size
+                    cam = self.camdata[image.camera_id]
+                    dep_width = cam.width//self.img_downscale
+                    dep_height = cam.height//self.img_downscale
+                    depth = np.zeros((dep_height, dep_width))
+
+                    # get camera pose
+                    w2c_mat = image.w2c_mat()
+
+                    # fill the valid values
+                    for i in range(image.point3D_ids.shape[0]):
+                        u = int(image.xys[i, 0]//self.img_downscale)
+                        v = int(image.xys[i, 1]//self.img_downscale)
+                        raw_xyz = pts3d[image.point3D_ids[i]].xyz
+                        raw_xyz = np.array([[raw_xyz[0], raw_xyz[1], raw_xyz[2], 1]]).transpose()
+                        # get depth
+                        dep = np.matmul(w2c_mat, raw_xyz)[2]
+                        if dep > 0:
+                            # update rescaled depth
+                            depth[v, u] = dep / self.scale_factor
+
+                depth = self.transform(depth) # (3, h, w)
+                depth = depth.view(1, -1).permute(1, 0) # (h*w, 1)
+                self.all_depths += [depth]
+            self.all_depths = torch.cat(self.all_depths, 0) # ((N_images-1)*h*w, 1)
+
+
         # Step 5. split the img_ids (the number of images is verfied to match that in the paper)
         self.img_ids_train = [id_ for i, id_ in enumerate(self.img_ids)
                                     if self.files.loc[i, 'split']=='train']
@@ -228,6 +292,7 @@ class PhototourismDataset(Dataset):
             else:
                 self.all_rays = []
                 self.all_rgbs = []
+                # self.all_depths = []
                 for id_ in self.img_ids_train:
                     c2w = torch.FloatTensor(self.poses_dict[id_])
 
@@ -272,21 +337,27 @@ class PhototourismDataset(Dataset):
             return self.N_images_train
         if self.split == 'val':
             return self.val_num
+        if self.split == 'test_all':
+            return len(self.poses_dict)
         return len(self.poses_test)
 
     def __getitem__(self, idx):
         if self.split == 'train': # use data in the buffers
             sample = {'rays': self.all_rays[idx, :8],
                       'ts': self.all_rays[idx, 8].long(),
-                      'rgbs': self.all_rgbs[idx]}
+                      'rgbs': self.all_rgbs[idx],
+                      'depths': self.all_depths[idx]}
 
-        elif self.split in ['val', 'test_train']:
+        elif self.split in ['val', 'test_train', 'test_all']:
             sample = {}
             if self.split == 'val':
                 id_ = self.val_id
+            elif self.split == 'test_all':
+                id_ = self.img_ids[idx]
             else:
                 id_ = self.img_ids_train[idx]
             sample['c2w'] = c2w = torch.FloatTensor(self.poses_dict[id_])
+            sample['image_path'] = self.image_paths[id_]
 
             img = Image.open(os.path.join(self.root_dir, 'colmap/images',
                                           self.image_paths[id_])).convert('RGB')
@@ -298,6 +369,12 @@ class PhototourismDataset(Dataset):
             img = self.transform(img) # (3, h, w)
             img = img.view(3, -1).permute(1, 0) # (h*w, 3) RGB
             sample['rgbs'] = img
+
+            depth_ret, depth = self.read_depth(self.image_paths[id_])
+            if depth_ret:
+                depth = self.transform(depth) # (3, h, w)
+                depth = depth.view(1, -1).permute(1, 0) # (h*w, 1)
+                sample['depths'] = depth
 
             directions = get_ray_directions(img_h, img_w, self.Ks[id_])
             rays_o, rays_d = get_rays(directions, c2w)

@@ -74,15 +74,16 @@ run colmap
 Run (example)
 
 ```
-SESSION_NAME=20220823T175708+0800_xvnxa_xvnxa004_jmwdemo2
+SESSION_NAME=20220726T162250+0800_xvnxa_xvnxa001_gzns_2jmw2
 python prepare_phototourism.py --root_dir ./data/${SESSION_NAME} --img_downscale 8
 
 python train.py \
   --root_dir ./data/${SESSION_NAME} --dataset_name phototourism \
   --img_downscale 8 --use_cache --N_importance 64 --N_samples 64 \
-  --encode_a --encode_t --beta_min 0.03 --N_vocab 1500 \
-  --num_epochs 20 --batch_size 1024 \
+  --encode_a --encode_t --beta_min 0.03 --N_vocab 60000 \
+  --num_epochs 20 --batch_size 1024 --depth_loss \
   --optimizer adam --lr 5e-4 --lr_scheduler cosine \
+  --ckpt_path ./ckpts/${SESSION_NAME}/epoch=3.ckpt \
   --exp_name ${SESSION_NAME}
 ```
 

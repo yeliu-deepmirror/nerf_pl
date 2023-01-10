@@ -49,6 +49,12 @@ class Image(BaseImage):
     def qvec2rotmat(self):
         return qvec2rotmat(self.qvec)
 
+    def w2c_mat(self):
+        bottom = np.array([0, 0, 0, 1.]).reshape(1, 4)
+        R = qvec2rotmat(self.qvec)
+        t = self.tvec.reshape(3, 1)
+        return np.concatenate([np.concatenate([R, t], 1), bottom], 0)
+
 
 CAMERA_MODELS = {
     CameraModel(model_id=0, model_name="SIMPLE_PINHOLE", num_params=3),

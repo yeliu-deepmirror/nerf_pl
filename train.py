@@ -30,7 +30,7 @@ class NeRFSystem(LightningModule):
         super().__init__()
         self.hparams = hparams
 
-        self.loss = loss_dict['nerfw'](coef=1)
+        self.loss = loss_dict['nerfw'](coef=1, use_depth=hparams.depth_loss)
 
         self.models_to_train = []
         self.embedding_xyz = PosEmbedding(hparams.N_emb_xyz-1, hparams.N_emb_xyz)
@@ -124,11 +124,14 @@ class NeRFSystem(LightningModule):
                           num_workers=4,
                           batch_size=1, # validate one image (H*W rays) at a time
                           pin_memory=True)
-    
+
     def training_step(self, batch, batch_nb):
         rays, rgbs, ts = batch['rays'], batch['rgbs'], batch['ts']
         results = self(rays, ts)
-        loss_d = self.loss(results, rgbs)
+        targets = {'rgbs': rgbs}
+        if 'depths' in batch:
+            targets['depths'] = batch['depths']
+        loss_d = self.loss(results, targets)
         loss = sum(l for l in loss_d.values())
 
         with torch.no_grad():
@@ -141,6 +144,9 @@ class NeRFSystem(LightningModule):
             self.log(f'train/{k}', v, prog_bar=True)
         self.log('train/psnr', psnr_, prog_bar=True)
 
+        # clean cache
+        del results
+        torch.cuda.empty_cache()
         return loss
 
     def validation_step(self, batch, batch_nb):
@@ -149,11 +155,13 @@ class NeRFSystem(LightningModule):
         rgbs = rgbs.squeeze() # (H*W, 3)
         ts = ts.squeeze() # (H*W)
         results = self(rays, ts)
-        loss_d = self.loss(results, rgbs)
+
+        targets = {'rgbs': rgbs}
+        loss_d = self.loss(results, targets)
         loss = sum(l for l in loss_d.values())
         log = {'val_loss': loss}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
-    
+
         if batch_nb == 0:
             if self.hparams.dataset_name == 'phototourism':
                 WH = batch['img_wh']
@@ -170,6 +178,9 @@ class NeRFSystem(LightningModule):
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
 
+        # clean cache
+        del results
+        torch.cuda.empty_cache()
         return log
 
     def validation_epoch_end(self, outputs):
